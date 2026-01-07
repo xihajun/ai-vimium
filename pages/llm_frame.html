@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>LLM Frame</title>
+    <meta name="color-scheme" content="light dark">
+    <meta charset="UTF-8">
+    <link rel="stylesheet" type="text/css" href="../content_scripts/vimium.css" />
+    <link rel="stylesheet" type="text/css" href="llm_frame.css" />
+    <script src="llm_frame.js" type="module"></script>
+  </head>
+  <body>
+    <div id="llm-root">
+      <header class="llm-header">
+        <div class="llm-title">LLM 状态</div>
+        <div class="llm-actions">
+          <button id="llm-refresh" type="button">刷新</button>
+          <button id="llm-close" type="button">关闭</button>
+        </div>
+      </header>
+      <section class="llm-status">
+        <span class="llm-status-label">Status</span>
+        <span id="llm-status" class="llm-status-pill" data-status="idle">idle</span>
+      </section>
+      <section class="llm-react-panels">
+        <div class="llm-panel">
+          <h2>Thought</h2>
+          <pre id="llm-thought"></pre>
+        </div>
+        <div class="llm-panel">
+          <h2>Action</h2>
+          <pre id="llm-action"></pre>
+        </div>
+        <div class="llm-panel">
+          <h2>Observation</h2>
+          <pre id="llm-observation"></pre>
+        </div>
+        <div class="llm-panel">
+          <h2>NextAction</h2>
+          <pre id="llm-next-action"></pre>
+        </div>
+      </section>
+      <section class="llm-json-preview">
+        <h2>Snapshot</h2>
+        <pre id="llm-json"></pre>
+      </section>
+    </div>
+  </body>
+</html>
