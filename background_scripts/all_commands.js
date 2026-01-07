@@ -614,6 +614,13 @@ const allCommands = [
     noRepeat: true,
     topFrame: true,
   },
+  {
+    name: "llmCaptureScreenshot",
+    desc: "Capture a screenshot for LLM",
+    group: "misc",
+    noRepeat: true,
+    topFrame: true,
+  },
 ];
 
 export { allCommands };

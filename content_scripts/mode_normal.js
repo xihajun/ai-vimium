@@ -245,6 +245,9 @@ const NormalModeCommands = {
   showHelp(sourceFrameId) {
     return HelpDialog.toggle({ sourceFrameId });
   },
+  llmCaptureScreenshot() {
+    return LLMMode.requestScreenshot();
+  },
 
   passNextKey(count, options) {
     // TODO(philc): OK to remove return statement?
