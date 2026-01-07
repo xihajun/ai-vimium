@@ -218,6 +218,20 @@ iframe.vomnibar-frame {
   z-index: 2147483647;
 }
 
+iframe.vimium-llm-frame {
+  background-color: transparent;
+  padding: 0px;
+  overflow: hidden;
+  display: block;
+  position: fixed;
+  width: 340px;
+  height: 420px;
+  bottom: 20px;
+  left: 20px;
+  border: none;
+  z-index: 2147483647;
+}
+
 div.vimium-flash {
   box-shadow: 0px 0px 4px 2px #4183c4;
   padding: 1px;

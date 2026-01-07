@@ -739,6 +739,12 @@ const sendRequestHandlers = {
     const completer = completers[request.completerName];
     completer.cancel();
   },
+
+  async captureVisibleTab(_request, sender) {
+    return await chrome.tabs.captureVisibleTab(sender.tab.windowId, {
+      format: "png",
+    });
+  },
 };
 
 Utils.addChromeRuntimeOnMessageListener(

@@ -1,0 +1,33 @@
+.llm-container {
+  font-family: system-ui, sans-serif;
+  color: var(--vimium-background-text-color, #111);
+  background: var(--vimium-background-color, #fff);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  padding: 12px;
+  width: 320px;
+}
+
+.llm-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.llm-screenshot {
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: #f2f2f2;
+}
+
+.llm-observation {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--vimium-foreground-text-color, #333);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 160px;
+  overflow: auto;
+}
