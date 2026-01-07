@@ -58,3 +58,9 @@ footer {
 footer .options-message {
   flex-grow: 1;
 }
+
+.actions-row {
+  margin: 10px 0 8px;
+  display: flex;
+  gap: 8px;
+}

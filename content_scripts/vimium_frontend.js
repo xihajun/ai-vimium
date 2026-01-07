@@ -383,6 +383,9 @@ const messageHandlers = {
   showMessage(request) {
     HUD.show(request.message, 2000);
   },
+  showLLMOverlay({ sourceFrameId }) {
+    LLMFrame.show({ sourceFrameId });
+  },
 };
 
 async function handleMessage(request, sender) {

@@ -51,6 +51,10 @@ const ActionPage = {
     saveButton.addEventListener("click", (e) => this.onSave());
 
     document.querySelector("#cancel").addEventListener("click", () => globalThis.close());
+    document.querySelector("#open-llm-chat").addEventListener("click", async () => {
+      await chrome.tabs.sendMessage(activeTab.id, { handler: "showLLMOverlay" });
+      globalThis.close();
+    });
 
     const onUpdated = () => {
       saveButton.disabled = false;
@@ -123,7 +127,7 @@ const ActionPage = {
       const hasBlankPassKeysRule = rules.find((r) => r.passKeys.length == 0);
       caption = hasBlankPassKeysRule ? "No" : "Some";
     }
-    document.querySelector("#how-many-enabled").textContent = caption;
+    document.querySelector("#howManyEnabled").textContent = caption;
   },
 
   async onSave() {
