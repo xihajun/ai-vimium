@@ -496,6 +496,8 @@ const LLMFrame = {
     action: "",
     observation: "",
     nextAction: "",
+    rawResponse: "",
+    screenshot: "",
   },
 
   isShowing() {
@@ -538,6 +540,68 @@ const LLMFrame = {
 
   setStatus(status) {
     this.setSnapshot({ status });
+  },
+
+  async runAnalysis({ sourceFrameId } = {}) {
+    await Settings.onLoaded();
+    if (!Settings.get("llmEnabled")) {
+      this.init();
+      this.show({ sourceFrameId });
+      this.setSnapshot({
+        status: "error",
+        observation: "LLM is disabled. Enable it in Vimium options to continue.",
+      });
+      return;
+    }
+
+    const prompt = Settings.get("llmUserPrompt");
+    const includeScreenshot = Settings.get("llmIncludeScreenshot");
+    this.init();
+    this.show({ sourceFrameId });
+    this.setSnapshot({
+      status: "busy",
+      thought: "",
+      action: "",
+      observation: "",
+      nextAction: "",
+      rawResponse: "",
+      screenshot: "",
+    });
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        handler: "runLLMRequest",
+        prompt,
+        includeScreenshot,
+        pageContext: {
+          url: globalThis.location.href,
+          title: globalThis.document?.title || "",
+        },
+      });
+      if (!response || response.error) {
+        this.setSnapshot({
+          status: "error",
+          observation: response?.error || "LLM request failed.",
+          rawResponse: response?.rawResponse || "",
+          screenshot: response?.screenshot || "",
+        });
+        return;
+      }
+      this.setSnapshot({
+        status: "idle",
+        thought: response.result?.thought || "",
+        action: response.result?.action || "",
+        observation: response.result?.observation || "",
+        nextAction: response.result?.nextAction || "",
+        rawResponse: response.rawResponse || "",
+        screenshot: response.screenshot || "",
+      });
+    } catch (error) {
+      this.setSnapshot({
+        status: "error",
+        observation: `LLM request failed: ${error?.message || error}`,
+      });
+    }
   },
 
   show(options = {}) {

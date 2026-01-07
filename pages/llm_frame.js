@@ -8,6 +8,8 @@ const DEFAULT_SNAPSHOT = {
   action: "",
   observation: "",
   nextAction: "",
+  rawResponse: "",
+  screenshot: "",
 };
 
 const state = {
@@ -36,7 +38,21 @@ function renderSnapshot(snapshot) {
   setText("llm-action", normalized.action);
   setText("llm-observation", normalized.observation);
   setText("llm-next-action", normalized.nextAction);
-  setText("llm-json", JSON.stringify(normalized, null, 2));
+  const screenshot = document.getElementById("llm-screenshot");
+  if (screenshot) {
+    if (normalized.screenshot) {
+      screenshot.src = normalized.screenshot;
+      screenshot.classList.add("has-image");
+    } else {
+      screenshot.removeAttribute("src");
+      screenshot.classList.remove("has-image");
+    }
+  }
+  const jsonSnapshot = {
+    ...normalized,
+    screenshot: normalized.screenshot ? "[screenshot data]" : "",
+  };
+  setText("llm-json", JSON.stringify(jsonSnapshot, null, 2));
 }
 
 function requestSnapshot() {

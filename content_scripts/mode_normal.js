@@ -245,6 +245,9 @@ const NormalModeCommands = {
   showHelp(sourceFrameId) {
     return HelpDialog.toggle({ sourceFrameId });
   },
+  llmAnalyzePage() {
+    return globalThis.LLMFrame?.runAnalysis?.({ sourceFrameId: globalThis.frameId });
+  },
 
   passNextKey(count, options) {
     // TODO(philc): OK to remove return statement?
