@@ -426,12 +426,21 @@ async function initializePreDomReady() {
 
 // Check if Vimium should be enabled or not based on the top frame's URL.
 async function checkIfEnabledForUrl() {
+  if (extensionHasBeenUnloaded()) {
+    return;
+  }
   const promises = [];
   promises.push(chrome.runtime.sendMessage({ handler: "initializeFrame" }));
   if (!Settings.isLoaded()) {
     promises.push(Settings.onLoaded());
   }
-  const [response, ...unused] = await Promise.all(promises);
+  let response;
+  try {
+    [response] = await Promise.all(promises);
+  } catch {
+    return;
+  }
+  if (!response) return;
 
   isEnabledForUrl = response.isEnabledForUrl;
 
