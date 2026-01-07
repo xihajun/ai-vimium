@@ -4,6 +4,8 @@ import { allCommands } from "../background_scripts/all_commands.js";
 import { Commands, KeyMappingsParser } from "../background_scripts/commands.js";
 import * as userSearchEngines from "../background_scripts/user_search_engines.js";
 
+const llmApiKeyStorageKey = "llmApiKey";
+
 const options = {
   filterLinkHints: "boolean",
   grabBackFocus: "boolean",
@@ -11,6 +13,12 @@ const options = {
   hideUpdateNotifications: "boolean",
   ignoreKeyboardLayout: "boolean",
   keyMappings: "string",
+  llmEnabled: "boolean",
+  llmEndpoint: "string",
+  llmMaxTokens: "number",
+  llmModel: "string",
+  llmProvider: "string",
+  llmTemperature: "number",
   linkHintCharacters: "string",
   linkHintNumbers: "string",
   newTabCustomUrl: "string",
@@ -98,6 +106,7 @@ const OptionsPage = {
 
     const settings = Settings.getSettings();
     this.setFormFromSettings(settings);
+    await this.loadLlmApiKey();
   },
 
   getOptionEl(optionName) {
@@ -272,6 +281,7 @@ const OptionsPage = {
       return;
     }
 
+    await this.saveLlmApiKey();
     await Settings.setSettings(this.getSettingsFromForm());
     const el = document.querySelector("#save");
     el.disabled = true;
@@ -351,6 +361,22 @@ const OptionsPage = {
         alert("Settings have been restored from the backup.");
       };
     }
+  },
+
+  async loadLlmApiKey() {
+    const result = await chrome.storage.local.get({ [llmApiKeyStorageKey]: "" });
+    const apiKeyInput = this.getOptionEl("llmApiKey");
+    if (apiKeyInput) {
+      apiKeyInput.value = result[llmApiKeyStorageKey] ?? "";
+    }
+  },
+
+  async saveLlmApiKey() {
+    const apiKeyInput = this.getOptionEl("llmApiKey");
+    if (!apiKeyInput) {
+      return;
+    }
+    await chrome.storage.local.set({ [llmApiKeyStorageKey]: apiKeyInput.value.trim() });
   },
 };
 
