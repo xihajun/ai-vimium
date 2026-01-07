@@ -207,6 +207,126 @@ function createRepeatCommand(command) {
   };
 }
 
+function buildLLMPrompt({ prompt, pageContext }) {
+  const lines = [];
+  if (pageContext?.title) {
+    lines.push(`Page title: ${pageContext.title}`);
+  }
+  if (pageContext?.url) {
+    lines.push(`Page URL: ${pageContext.url}`);
+  }
+  if (prompt) {
+    lines.push(`User prompt: ${prompt}`);
+  }
+  lines.push("Respond with a JSON object containing thought, action, observation, nextAction.");
+  return lines.join("\n");
+}
+
+function extractJsonResponse(text) {
+  if (!text) return null;
+  let cleaned = text.trim();
+  if (cleaned.startsWith("```")) {
+    const firstNewline = cleaned.indexOf("\n");
+    if (firstNewline !== -1) {
+      cleaned = cleaned.slice(firstNewline).trim();
+    }
+    if (cleaned.endsWith("```")) {
+      cleaned = cleaned.slice(0, cleaned.lastIndexOf("```")).trim();
+    }
+  }
+  cleaned = cleaned.replace(/^```json/i, "").trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    return null;
+  }
+}
+
+async function captureVisibleTab(sender) {
+  if (!sender?.tab?.windowId) {
+    throw new Error("Missing sender tab information for screenshot.");
+  }
+  return chrome.tabs.captureVisibleTab(sender.tab.windowId, { format: "png" });
+}
+
+async function runLLMRequest(request, sender) {
+  await Settings.onLoaded();
+  if (!Settings.get("llmEnabled")) {
+    return { error: "LLM is disabled in Vimium settings." };
+  }
+
+  const apiKey = Settings.get("llmApiKey");
+  if (!apiKey) {
+    return { error: "LLM API key is missing in Vimium settings." };
+  }
+
+  const baseUrl = Settings.get("llmApiBaseUrl") || "https://api.openai.com/v1";
+  const model = Settings.get("llmModel") || "gpt-4o-mini";
+  const temperature = Settings.get("llmTemperature");
+  const maxTokens = Settings.get("llmMaxTokens");
+  const systemPrompt = Settings.get("llmSystemPrompt");
+  const includeScreenshot = request.includeScreenshot && Settings.get("llmIncludeScreenshot");
+
+  let screenshot = "";
+  if (includeScreenshot) {
+    try {
+      screenshot = await captureVisibleTab(sender);
+    } catch (error) {
+      return { error: `Failed to capture screenshot: ${error?.message || error}` };
+    }
+  }
+
+  const promptText = buildLLMPrompt(request);
+  const userContent = screenshot
+    ? [
+      { type: "text", text: promptText },
+      { type: "image_url", image_url: { url: screenshot } },
+    ]
+    : promptText;
+
+  const payload = {
+    model,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userContent },
+    ],
+    temperature,
+    max_tokens: maxTokens,
+  };
+
+  const endpoint = `${baseUrl.replace(/\\/+$/, "")}/chat/completions`;
+  let response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch (error) {
+    return { error: `Failed to call LLM API: ${error?.message || error}` };
+  }
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    return {
+      error: `LLM API error (${response.status}): ${errorText}`,
+      screenshot,
+    };
+  }
+
+  const json = await response.json();
+  const content = json?.choices?.[0]?.message?.content || "";
+  const parsed = extractJsonResponse(content);
+  return {
+    result: parsed || {},
+    rawResponse: content,
+    screenshot,
+  };
+}
+
 function nextZoomLevel(currentZoom, steps) {
   // Chrome's default zoom levels.
   const chromeLevels = [0.25, 0.33, 0.5, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5];
@@ -625,6 +745,8 @@ const sendRequestHandlers = {
       index: request.tab.index + 1,
     });
   },
+
+  runLLMRequest,
 
   launchSearchQuery({ query, openInNewTab }) {
     const disposition = openInNewTab ? "NEW_TAB" : "CURRENT_TAB";

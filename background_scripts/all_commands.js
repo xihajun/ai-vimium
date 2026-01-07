@@ -608,6 +608,14 @@ const allCommands = [
   },
 
   {
+    name: "llmAnalyzePage",
+    desc: "Analyze the current page with LLM (ReAct)",
+    group: "misc",
+    advanced: true,
+    noRepeat: true,
+  },
+
+  {
     name: "showHelp",
     desc: "Show help",
     group: "misc",

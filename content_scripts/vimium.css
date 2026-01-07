@@ -224,8 +224,8 @@ iframe.vimium-llm-frame {
   overflow: hidden;
   display: block;
   position: fixed;
-  width: 380px;
-  height: 420px;
+  width: 420px;
+  height: 560px;
   bottom: 90px;
   right: 20px;
   border: none;
