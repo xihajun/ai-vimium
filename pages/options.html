@@ -238,6 +238,61 @@ b: http://b.com/?q=%s description
           These styles are used in addition to and take precedence over Vimium's default styles.
         </div>
 
+        <header>LLM Options</header>
+
+        <h2></h2>
+        <label class="boolean-label">
+          <input name="llmEnabled" type="checkbox" />
+          Enable LLM features
+        </label>
+        <div class="example">
+          Turn on LLM-powered features that use the configured provider.
+        </div>
+
+        <h2>Provider</h2>
+        <select name="llmProvider">
+          <option value="openai">OpenAI-compatible</option>
+          <option value="anthropic">Anthropic</option>
+          <option value="ollama">Ollama</option>
+          <option value="openrouter">OpenRouter</option>
+          <option value="custom">Custom</option>
+        </select>
+        <div class="example">
+          Choose the API flavor. Use "OpenAI-compatible" for most OpenAI-style endpoints.
+        </div>
+
+        <h2>Model</h2>
+        <input name="llmModel" type="text" />
+        <div class="example">
+          Examples: <code>gpt-4o-mini</code>, <code>claude-3-5-sonnet-20241022</code>,
+          <code>llama3.1:8b</code>.
+        </div>
+
+        <h2>Endpoint</h2>
+        <input name="llmEndpoint" type="text" />
+        <div class="example">
+          Example: <code>https://api.openai.com/v1/chat/completions</code>. For Ollama, try
+          <code>http://localhost:11434/v1/chat/completions</code>.
+        </div>
+
+        <h2>API Key</h2>
+        <input name="llmApiKey" type="password" autocomplete="off" />
+        <div class="example">
+          Stored locally (not synced). Leave blank if your endpoint does not require a key.
+        </div>
+
+        <h2>Temperature</h2>
+        <input name="llmTemperature" type="number" step="0.1" min="0" />
+        <div class="example">
+          Lower values are more deterministic; higher values are more creative.
+        </div>
+
+        <h2>Max tokens</h2>
+        <input name="llmMaxTokens" type="number" min="1" />
+        <div class="example">
+          Upper limit for response length per request.
+        </div>
+
         <header>Backup and Restore</header>
 
         <h2>Backup</h2>
