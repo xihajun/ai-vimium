@@ -609,6 +609,8 @@ const LLMFrame = {
       metaKey: Boolean(modifiers.metaKey),
       shiftKey: Boolean(modifiers.shiftKey),
       isTrusted: true,
+      preventDefault() {},
+      stopImmediatePropagation() {},
     };
   },
 
