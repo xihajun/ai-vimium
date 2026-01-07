@@ -74,6 +74,34 @@ body {
   color: #ea4335;
 }
 
+.llm-screenshot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.llm-screenshot-frame {
+  background: rgba(127, 127, 127, 0.08);
+  border-radius: 10px;
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 90px;
+}
+
+#llm-screenshot {
+  width: 100%;
+  max-height: 140px;
+  object-fit: cover;
+  border-radius: 8px;
+  display: none;
+}
+
+#llm-screenshot.has-image {
+  display: block;
+}
+
 .llm-react-panels {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

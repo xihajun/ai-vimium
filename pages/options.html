@@ -96,6 +96,70 @@ b: http://b.com/?q=%s description
           >here</a>.
         </div>
 
+        <header>LLM Settings</header>
+
+        <h2>Enable LLM mode</h2>
+        <label class="boolean-label">
+          <input name="llmEnabled" type="checkbox" />
+          Enable LLM analysis overlay
+        </label>
+        <div class="example">
+          When enabled, Vimium can capture the current page and run a ReAct-style analysis to
+          suggest next actions.
+        </div>
+
+        <h2>Include screenshot in LLM requests</h2>
+        <label class="boolean-label">
+          <input name="llmIncludeScreenshot" type="checkbox" />
+          Attach the current tab screenshot
+        </label>
+        <div class="example">
+          Screenshots help the model understand visual layout. Disable if you prefer text-only
+          prompts.
+        </div>
+
+        <h2>LLM API base URL</h2>
+        <input name="llmApiBaseUrl" type="text" spellcheck="false" />
+        <div class="example">
+          OpenAI-compatible endpoint, e.g. https://api.openai.com/v1
+        </div>
+
+        <h2>LLM API key</h2>
+        <input name="llmApiKey" type="password" autocomplete="off" spellcheck="false" />
+        <div class="example">
+          Stored in sync storage. Consider a separate key for browser usage.
+        </div>
+
+        <h2>LLM model</h2>
+        <input name="llmModel" type="text" spellcheck="false" />
+        <div class="example">
+          Example: gpt-4o-mini
+        </div>
+
+        <h2>LLM temperature</h2>
+        <input name="llmTemperature" type="number" min="0" max="2" step="0.1" />
+        <div class="example">
+          Lower values are more deterministic.
+        </div>
+
+        <h2>LLM max tokens</h2>
+        <input name="llmMaxTokens" type="number" min="128" step="1" />
+        <div class="example">
+          Maximum tokens to generate for each response.
+        </div>
+
+        <h2>LLM system prompt (ReAct)</h2>
+        <textarea name="llmSystemPrompt" class="llm-textarea" spellcheck="false"></textarea>
+        <div class="example">
+          This is sent as the system prompt to enforce ReAct-style reasoning and JSON output.
+        </div>
+
+        <h2>LLM user prompt</h2>
+        <textarea name="llmUserPrompt" class="llm-textarea" spellcheck="false"></textarea>
+        <div class="example">
+          This prompt is combined with the current page URL/title before sending to the model.
+        </div>
+
         <header>Advanced Options</header>
 
         <h2>Scroll step size</h2>
