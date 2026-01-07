@@ -13,6 +13,7 @@ import "../lib/settings.js";
 import "../lib/find_mode_history.js";
 
 import "../content_scripts/mode.js";
+import "../content_scripts/llm_mode.js";
 import "../content_scripts/ui_component.js";
 import "../content_scripts/link_hints.js";
 import "../content_scripts/vomnibar.js";

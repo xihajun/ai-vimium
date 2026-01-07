@@ -487,6 +487,88 @@ const HelpDialog = {
   },
 };
 
+const LLMFrame = {
+  llmUI: null,
+  mode: null,
+  snapshot: {
+    status: "idle",
+    thought: "",
+    action: "",
+    observation: "",
+    nextAction: "",
+  },
+
+  isShowing() {
+    return this.llmUI && this.llmUI.showing;
+  },
+
+  handleUIComponentMessage({ data }) {
+    const handlers = {
+      requestSnapshot: this.sendSnapshot,
+      requestHide: this.hide,
+    };
+    const handler = handlers[data.name];
+    if (handler) {
+      return handler.bind(this)(data);
+    }
+  },
+
+  init() {
+    if (!this.llmUI) {
+      this.llmUI = new UIComponent();
+      this.llmUI.load(
+        "pages/llm_frame.html",
+        "vimium-llm-frame",
+        this.handleUIComponentMessage.bind(this),
+      );
+    }
+  },
+
+  sendSnapshot() {
+    if (!this.llmUI) return;
+    this.llmUI.postMessage({ name: "llmSnapshot", snapshot: this.snapshot });
+  },
+
+  setSnapshot(snapshot) {
+    this.snapshot = Object.assign({}, this.snapshot, snapshot);
+    if (this.isShowing()) {
+      this.sendSnapshot();
+    }
+  },
+
+  setStatus(status) {
+    this.setSnapshot({ status });
+  },
+
+  show(options = {}) {
+    this.init();
+    if (!this.mode || !this.mode.modeIsActive) {
+      this.mode = new LLMMode({ controller: this });
+    }
+    const focusOptions = {
+      focus: false,
+      sourceFrameId: options.sourceFrameId ?? globalThis.frameId,
+    };
+    return this.llmUI.show({ name: "llmSnapshot", snapshot: this.snapshot }, focusOptions);
+  },
+
+  hide({ fromMode } = {}) {
+    if (!fromMode) {
+      this.setStatus("idle");
+    }
+    if (this.llmUI) {
+      this.llmUI.hide();
+    }
+    if (this.mode) {
+      const mode = this.mode;
+      this.mode = null;
+      if (!fromMode && mode.modeIsActive) {
+        mode.exit();
+      }
+    }
+  },
+};
+
 const testEnv = globalThis.window == null;
 if (!testEnv) {
   initWindowIsFocused();
@@ -496,6 +578,7 @@ if (!testEnv) {
 
 Object.assign(globalThis, {
   HelpDialog,
+  LLMFrame,
   handlerStack,
   windowIsFocused,
   // These are exported for normal mode and link-hints mode.
