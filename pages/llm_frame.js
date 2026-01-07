@@ -10,6 +10,7 @@ const DEFAULT_SNAPSHOT = {
   nextAction: "",
   rawResponse: "",
   screenshot: "",
+  chatMessages: [],
 };
 
 const state = {
@@ -38,6 +39,7 @@ function renderSnapshot(snapshot) {
   setText("llm-action", normalized.action);
   setText("llm-observation", normalized.observation);
   setText("llm-next-action", normalized.nextAction);
+  renderChatMessages(normalized.chatMessages);
   const screenshot = document.getElementById("llm-screenshot");
   if (screenshot) {
     if (normalized.screenshot) {
@@ -55,12 +57,34 @@ function renderSnapshot(snapshot) {
   setText("llm-json", JSON.stringify(jsonSnapshot, null, 2));
 }
 
+function renderChatMessages(messages) {
+  const container = document.getElementById("llm-chat-log");
+  if (!container) return;
+  container.innerHTML = "";
+  (messages || []).forEach((message) => {
+    const item = document.createElement("div");
+    item.classList.add("llm-chat-message");
+    item.classList.add(message.role || "assistant");
+    item.textContent = message.content || "";
+    container.appendChild(item);
+  });
+  container.scrollTop = container.scrollHeight;
+}
+
 function requestSnapshot() {
   UIComponentMessenger.postMessage({ name: "requestSnapshot" });
 }
 
 function closeFrame() {
   UIComponentMessenger.postMessage({ name: "requestHide" });
+}
+
+function sendChatMessage() {
+  const textarea = document.getElementById("llm-chat-text");
+  const message = textarea?.value.trim();
+  if (!message) return;
+  UIComponentMessenger.postMessage({ name: "llmChatSend", message });
+  textarea.value = "";
 }
 
 function handleMessage({ data }) {
@@ -77,6 +101,13 @@ function handleMessage({ data }) {
 function initDom() {
   document.getElementById("llm-refresh")?.addEventListener("click", requestSnapshot);
   document.getElementById("llm-close")?.addEventListener("click", closeFrame);
+  document.getElementById("llm-chat-send")?.addEventListener("click", sendChatMessage);
+  document.getElementById("llm-chat-text")?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      sendChatMessage();
+    }
+  });
   globalThis.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       event.preventDefault();

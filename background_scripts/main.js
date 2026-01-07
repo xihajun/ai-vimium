@@ -289,12 +289,10 @@ async function runLLMRequest(request, sender) {
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userContent },
-    ],
-    temperature,
-    max_tokens: maxTokens,
+    ]
   };
 
-  const endpoint = `${baseUrl.replace(/\\/+$/, "")}/chat/completions`;
+  const endpoint = `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
   let response;
   try {
     response = await fetch(endpoint, {
