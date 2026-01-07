@@ -39,6 +39,8 @@ function renderSnapshot(snapshot) {
   setText("llm-action", normalized.action);
   setText("llm-observation", normalized.observation);
   setText("llm-next-action", normalized.nextAction);
+  setText("llm-capture-action", normalized.action || "-");
+  setText("llm-capture-next", normalized.nextAction || "-");
   renderChatMessages(normalized.chatMessages);
   const screenshot = document.getElementById("llm-screenshot");
   if (screenshot) {

@@ -502,6 +502,14 @@ const HelpDialog = {
 const LLMFrame = {
   llmUI: null,
   mode: null,
+  autoRun: {
+    active: false,
+    attempts: 0,
+    maxAttempts: 20,
+    prompt: "",
+    includeScreenshot: false,
+    sourceFrameId: null,
+  },
   snapshot: {
     status: "idle",
     thought: "",
@@ -780,6 +788,94 @@ const LLMFrame = {
     return true;
   },
 
+  isAutoRunDone(result) {
+    const actionType = result?.action?.type || result?.nextAction?.type || "";
+    if (actionType.toString().toLowerCase() === "done") return true;
+    const actionText = typeof result?.action === "string" ? result.action.trim().toLowerCase() : "";
+    const nextText = typeof result?.nextAction === "string"
+      ? result.nextAction.trim().toLowerCase()
+      : "";
+    return actionText === "done" || nextText === "done";
+  },
+
+  shouldContinueAutoRun({ result, executed }) {
+    if (!this.autoRun.active) return false;
+    if (this.autoRun.attempts >= this.autoRun.maxAttempts) return false;
+    if (this.isAutoRunDone(result)) return false;
+    return executed || Boolean(result);
+  },
+
+  scheduleAutoRun() {
+    window.setTimeout(() => {
+      if (!this.autoRun.active) return;
+      this.runAutoStep();
+    }, 800);
+  },
+
+  async runAutoStep() {
+    if (!this.autoRun.active) return;
+    if (this.autoRun.attempts >= this.autoRun.maxAttempts) {
+      this.autoRun.active = false;
+      this.setStatus("idle");
+      return;
+    }
+    this.setSnapshot({ status: "busy" });
+    this.autoRun.attempts += 1;
+    const response = await this.requestLLM({
+      prompt: this.autoRun.prompt,
+      includeScreenshot: this.autoRun.includeScreenshot,
+    });
+    if (!response || response.error) {
+      this.autoRun.active = false;
+      this.setSnapshot({
+        status: "error",
+        observation: response?.error || "LLM request failed.",
+        rawResponse: response?.rawResponse || "",
+        screenshot: response?.screenshot || "",
+      });
+      return;
+    }
+    const assistantMessage = response.rawResponse ||
+      JSON.stringify(response.result || {}, null, 2);
+    const updatedMessages = [
+      ...(this.snapshot.chatMessages || []),
+      { role: "assistant", content: assistantMessage },
+    ];
+    this.setSnapshot({
+      status: "busy",
+      thought: response.result?.thought || "",
+      action: response.result?.action || "",
+      observation: response.result?.observation || "",
+      nextAction: response.result?.nextAction || "",
+      rawResponse: response.rawResponse || "",
+      screenshot: response.screenshot || "",
+      chatMessages: updatedMessages,
+    });
+    const executed = this.maybeAutoExecuteAction(response.result);
+    if (this.shouldContinueAutoRun({ result: response.result, executed })) {
+      this.scheduleAutoRun();
+    } else {
+      this.autoRun.active = false;
+      this.setStatus("idle");
+    }
+  },
+
+  async requestLLM({ prompt, includeScreenshot }) {
+    const request = () =>
+      chrome.runtime.sendMessage({
+        handler: "runLLMRequest",
+        prompt,
+        includeScreenshot,
+        pageContext: {
+          url: globalThis.location.href,
+          title: globalThis.document?.title || "",
+        },
+      });
+    return includeScreenshot
+      ? await this.withScreenshotHidden(request)
+      : await request();
+  },
+
   async runChat({ message, sourceFrameId } = {}) {
     const trimmedMessage = message?.trim();
     if (!trimmedMessage) return;
@@ -821,26 +917,24 @@ const LLMFrame = {
     this.init();
     this.show({ sourceFrameId });
     const updatedMessages = [...existingMessages, { role: "user", content: trimmedMessage }];
+    this.autoRun = {
+      active: true,
+      attempts: 0,
+      maxAttempts: Settings.get("llmAutoRunMaxSteps") || 20,
+      prompt: trimmedMessage,
+      includeScreenshot,
+      sourceFrameId,
+    };
     this.setSnapshot({
       status: "busy",
       chatMessages: updatedMessages,
     });
 
     try {
-      const request = () =>
-        chrome.runtime.sendMessage({
-          handler: "runLLMRequest",
-          prompt: trimmedMessage,
-          includeScreenshot,
-          pageContext: {
-            url: globalThis.location.href,
-            title: globalThis.document?.title || "",
-          },
-        });
-      const response = includeScreenshot
-        ? await this.withScreenshotHidden(request)
-        : await request();
+      this.autoRun.attempts += 1;
+      const response = await this.requestLLM({ prompt: trimmedMessage, includeScreenshot });
       if (!response || response.error) {
+        this.autoRun.active = false;
         this.setSnapshot({
           status: "error",
           observation: response?.error || "LLM request failed.",
@@ -856,7 +950,7 @@ const LLMFrame = {
       const assistantMessage = response.rawResponse ||
         JSON.stringify(response.result || {}, null, 2);
       this.setSnapshot({
-        status: "idle",
+        status: "busy",
         thought: response.result?.thought || "",
         action: response.result?.action || "",
         observation: response.result?.observation || "",
@@ -865,8 +959,15 @@ const LLMFrame = {
         screenshot: response.screenshot || "",
         chatMessages: [...updatedMessages, { role: "assistant", content: assistantMessage }],
       });
-      this.maybeAutoExecuteAction(response.result);
+      const executed = this.maybeAutoExecuteAction(response.result);
+      if (this.shouldContinueAutoRun({ result: response.result, executed })) {
+        this.scheduleAutoRun();
+      } else {
+        this.autoRun.active = false;
+        this.setStatus("idle");
+      }
     } catch (error) {
+      this.autoRun.active = false;
       this.setSnapshot({
         status: "error",
         observation: `LLM request failed: ${error?.message || error}`,
@@ -905,6 +1006,14 @@ const LLMFrame = {
     const includeScreenshot = Settings.get("llmIncludeScreenshot");
     this.init();
     this.show({ sourceFrameId });
+    this.autoRun = {
+      active: true,
+      attempts: 0,
+      maxAttempts: Settings.get("llmAutoRunMaxSteps") || 20,
+      prompt,
+      includeScreenshot,
+      sourceFrameId,
+    };
     this.setSnapshot({
       status: "busy",
       thought: "",
@@ -916,20 +1025,10 @@ const LLMFrame = {
     });
 
     try {
-      const request = () =>
-        chrome.runtime.sendMessage({
-          handler: "runLLMRequest",
-          prompt,
-          includeScreenshot,
-          pageContext: {
-            url: globalThis.location.href,
-            title: globalThis.document?.title || "",
-          },
-        });
-      const response = includeScreenshot
-        ? await this.withScreenshotHidden(request)
-        : await request();
+      this.autoRun.attempts += 1;
+      const response = await this.requestLLM({ prompt, includeScreenshot });
       if (!response || response.error) {
+        this.autoRun.active = false;
         this.setSnapshot({
           status: "error",
           observation: response?.error || "LLM request failed.",
@@ -939,7 +1038,7 @@ const LLMFrame = {
         return;
       }
       this.setSnapshot({
-        status: "idle",
+        status: "busy",
         thought: response.result?.thought || "",
         action: response.result?.action || "",
         observation: response.result?.observation || "",
@@ -947,8 +1046,15 @@ const LLMFrame = {
         rawResponse: response.rawResponse || "",
         screenshot: response.screenshot || "",
       });
-      this.maybeAutoExecuteAction(response.result);
+      const executed = this.maybeAutoExecuteAction(response.result);
+      if (this.shouldContinueAutoRun({ result: response.result, executed })) {
+        this.scheduleAutoRun();
+      } else {
+        this.autoRun.active = false;
+        this.setStatus("idle");
+      }
     } catch (error) {
+      this.autoRun.active = false;
       this.setSnapshot({
         status: "error",
         observation: `LLM request failed: ${error?.message || error}`,
