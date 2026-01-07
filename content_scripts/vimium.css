@@ -224,14 +224,20 @@ iframe.vimium-llm-frame {
   overflow: hidden;
   display: block;
   position: fixed;
-  width: 420px;
-  height: 640px;
-  bottom: 90px;
-  right: 20px;
+  width: 360px;
+  height: 100%;
+  top: 0;
+  right: 0;
   border: none;
   z-index: 2147483647;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-  border-radius: 12px;
+  border-radius: 12px 0 0 12px;
+  transition: opacity 0.15s ease-in-out;
+}
+
+iframe.vimium-llm-frame.vimium-llm-frame--hidden-for-capture {
+  opacity: 0;
+  pointer-events: none;
 }
 
 div.vimium-flash {

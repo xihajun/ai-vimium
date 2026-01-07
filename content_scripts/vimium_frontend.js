@@ -512,6 +512,7 @@ const LLMFrame = {
     screenshot: "",
     chatMessages: [],
   },
+  isCapturingScreenshot: false,
 
   isShowing() {
     return this.llmUI && this.llmUI.showing;
@@ -556,6 +557,142 @@ const LLMFrame = {
     this.setSnapshot({ status });
   },
 
+  setOverlayHiddenForScreenshot(hidden) {
+    if (!this.llmUI?.iframeElement) return;
+    this.llmUI.iframeElement.classList.toggle("vimium-llm-frame--hidden-for-capture", hidden);
+  },
+
+  async withScreenshotHidden(task) {
+    if (!this.llmUI?.iframeElement || this.isCapturingScreenshot) {
+      return task();
+    }
+    this.isCapturingScreenshot = true;
+    this.setOverlayHiddenForScreenshot(true);
+    await new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+    });
+    try {
+      return await task();
+    } finally {
+      this.setOverlayHiddenForScreenshot(false);
+      this.isCapturingScreenshot = false;
+    }
+  },
+
+  buildKeyEvent(key, modifiers = {}) {
+    const keyCodeMap = {
+      Escape: 27,
+      Enter: 13,
+      Tab: 9,
+      Backspace: 8,
+      Delete: 46,
+      " ": 32,
+      ArrowUp: 38,
+      ArrowDown: 40,
+      ArrowLeft: 37,
+      ArrowRight: 39,
+      PageUp: 33,
+      PageDown: 34,
+      Home: 36,
+      End: 35,
+    };
+    const keyCode = keyCodeMap[key] ??
+      (key && key.length === 1 ? key.toUpperCase().charCodeAt(0) : 0);
+    return {
+      key,
+      code: modifiers.code || "",
+      keyCode,
+      which: keyCode,
+      altKey: Boolean(modifiers.altKey),
+      ctrlKey: Boolean(modifiers.ctrlKey),
+      metaKey: Boolean(modifiers.metaKey),
+      shiftKey: Boolean(modifiers.shiftKey),
+      isTrusted: true,
+    };
+  },
+
+  parseVimiumKeySequence(sequence) {
+    if (!sequence || typeof sequence !== "string") return null;
+    const trimmed = sequence.replace(/\s+/g, "");
+    if (!trimmed) return null;
+    const keyAliases = {
+      esc: "Escape",
+      escape: "Escape",
+      enter: "Enter",
+      return: "Enter",
+      tab: "Tab",
+      space: " ",
+      backspace: "Backspace",
+      delete: "Delete",
+      del: "Delete",
+      up: "ArrowUp",
+      down: "ArrowDown",
+      left: "ArrowLeft",
+      right: "ArrowRight",
+      pageup: "PageUp",
+      pagedown: "PageDown",
+      pgup: "PageUp",
+      pgdn: "PageDown",
+      home: "Home",
+      end: "End",
+    };
+    const tokens = [];
+    for (let i = 0; i < trimmed.length; i += 1) {
+      const char = trimmed[i];
+      if (char === "<") {
+        const closeIndex = trimmed.indexOf(">", i + 1);
+        if (closeIndex === -1) return null;
+        const token = trimmed.slice(i + 1, closeIndex);
+        tokens.push({ type: "special", value: token });
+        i = closeIndex;
+      } else {
+        tokens.push({ type: "char", value: char });
+      }
+    }
+
+    return tokens.map((token) => {
+      if (token.type === "char") {
+        const key = token.value;
+        const isUpper = key.length === 1 && key.toUpperCase() === key && key.toLowerCase() !== key;
+        return this.buildKeyEvent(key, { shiftKey: isUpper });
+      }
+
+      const normalized = token.value.toLowerCase();
+      const parts = normalized.split("-");
+      const keyName = parts.pop();
+      const modifiers = {
+        altKey: parts.includes("a"),
+        ctrlKey: parts.includes("c"),
+        metaKey: parts.includes("m"),
+        shiftKey: parts.includes("s"),
+      };
+      const key = keyAliases[keyName] || keyName;
+      return this.buildKeyEvent(key, modifiers);
+    });
+  },
+
+  dispatchVimiumKeySequence(sequence) {
+    const events = this.parseVimiumKeySequence(sequence);
+    if (!events) return null;
+    events.forEach((event) => {
+      handlerStack.bubbleEvent("keydown", event);
+      handlerStack.bubbleEvent("keyup", event);
+    });
+    return sequence.replace(/\s+/g, "");
+  },
+
+  maybeAutoExecuteAction(result) {
+    const action = result?.nextAction || result?.action;
+    const appliedSequence = this.dispatchVimiumKeySequence(action);
+    if (!appliedSequence) return false;
+    const previousObservation = result?.observation || "";
+    const note = `Auto-executed Vimium keys: ${appliedSequence}`;
+    this.setSnapshot({
+      observation: previousObservation ? `${previousObservation}\n${note}` : note,
+    });
+    return true;
+  },
+
   async runChat({ message, sourceFrameId } = {}) {
     const trimmedMessage = message?.trim();
     if (!trimmedMessage) return;
@@ -572,6 +709,28 @@ const LLMFrame = {
 
     const includeScreenshot = Settings.get("llmIncludeScreenshot");
     const existingMessages = this.snapshot.chatMessages || [];
+    const apiKey = Settings.get("llmApiKey");
+    if (!apiKey) {
+      this.init();
+      this.show({ sourceFrameId });
+      if (/\s/.test(trimmedMessage)) {
+        this.setSnapshot({
+          status: "error",
+          observation: "LLM API key is missing. Paste your API key (no spaces) into the chat box.",
+        });
+        return;
+      }
+      await Settings.set("llmApiKey", trimmedMessage);
+      this.setSnapshot({
+        status: "idle",
+        observation: "API key saved. Send your task again to continue.",
+        chatMessages: [
+          ...existingMessages,
+          { role: "assistant", content: "✅ API key saved. Send your task again to continue." },
+        ],
+      });
+      return;
+    }
     this.init();
     this.show({ sourceFrameId });
     const updatedMessages = [...existingMessages, { role: "user", content: trimmedMessage }];
@@ -581,15 +740,19 @@ const LLMFrame = {
     });
 
     try {
-      const response = await chrome.runtime.sendMessage({
-        handler: "runLLMRequest",
-        prompt: trimmedMessage,
-        includeScreenshot,
-        pageContext: {
-          url: globalThis.location.href,
-          title: globalThis.document?.title || "",
-        },
-      });
+      const request = () =>
+        chrome.runtime.sendMessage({
+          handler: "runLLMRequest",
+          prompt: trimmedMessage,
+          includeScreenshot,
+          pageContext: {
+            url: globalThis.location.href,
+            title: globalThis.document?.title || "",
+          },
+        });
+      const response = includeScreenshot
+        ? await this.withScreenshotHidden(request)
+        : await request();
       if (!response || response.error) {
         this.setSnapshot({
           status: "error",
@@ -615,6 +778,7 @@ const LLMFrame = {
         screenshot: response.screenshot || "",
         chatMessages: [...updatedMessages, { role: "assistant", content: assistantMessage }],
       });
+      this.maybeAutoExecuteAction(response.result);
     } catch (error) {
       this.setSnapshot({
         status: "error",
@@ -639,6 +803,17 @@ const LLMFrame = {
       return;
     }
 
+    const apiKey = Settings.get("llmApiKey");
+    if (!apiKey) {
+      this.init();
+      this.show({ sourceFrameId });
+      this.setSnapshot({
+        status: "error",
+        observation: "LLM API key is missing. Paste your API key in the chat box to continue.",
+      });
+      return;
+    }
+
     const prompt = Settings.get("llmUserPrompt");
     const includeScreenshot = Settings.get("llmIncludeScreenshot");
     this.init();
@@ -654,15 +829,19 @@ const LLMFrame = {
     });
 
     try {
-      const response = await chrome.runtime.sendMessage({
-        handler: "runLLMRequest",
-        prompt,
-        includeScreenshot,
-        pageContext: {
-          url: globalThis.location.href,
-          title: globalThis.document?.title || "",
-        },
-      });
+      const request = () =>
+        chrome.runtime.sendMessage({
+          handler: "runLLMRequest",
+          prompt,
+          includeScreenshot,
+          pageContext: {
+            url: globalThis.location.href,
+            title: globalThis.document?.title || "",
+          },
+        });
+      const response = includeScreenshot
+        ? await this.withScreenshotHidden(request)
+        : await request();
       if (!response || response.error) {
         this.setSnapshot({
           status: "error",
@@ -681,6 +860,7 @@ const LLMFrame = {
         rawResponse: response.rawResponse || "",
         screenshot: response.screenshot || "",
       });
+      this.maybeAutoExecuteAction(response.result);
     } catch (error) {
       this.setSnapshot({
         status: "error",
