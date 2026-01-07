@@ -498,6 +498,7 @@ const LLMFrame = {
     nextAction: "",
     rawResponse: "",
     screenshot: "",
+    chatMessages: [],
   },
 
   isShowing() {
@@ -508,6 +509,7 @@ const LLMFrame = {
     const handlers = {
       requestSnapshot: this.sendSnapshot,
       requestHide: this.hide,
+      llmChatSend: this.runChat,
     };
     const handler = handlers[data.name];
     if (handler) {
@@ -540,6 +542,77 @@ const LLMFrame = {
 
   setStatus(status) {
     this.setSnapshot({ status });
+  },
+
+  async runChat({ message, sourceFrameId } = {}) {
+    const trimmedMessage = message?.trim();
+    if (!trimmedMessage) return;
+    await Settings.onLoaded();
+    if (!Settings.get("llmEnabled")) {
+      this.init();
+      this.show({ sourceFrameId });
+      this.setSnapshot({
+        status: "error",
+        observation: "LLM is disabled. Enable it in Vimium options to continue.",
+      });
+      return;
+    }
+
+    const includeScreenshot = Settings.get("llmIncludeScreenshot");
+    const existingMessages = this.snapshot.chatMessages || [];
+    this.init();
+    this.show({ sourceFrameId });
+    const updatedMessages = [...existingMessages, { role: "user", content: trimmedMessage }];
+    this.setSnapshot({
+      status: "busy",
+      chatMessages: updatedMessages,
+    });
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        handler: "runLLMRequest",
+        prompt: trimmedMessage,
+        includeScreenshot,
+        pageContext: {
+          url: globalThis.location.href,
+          title: globalThis.document?.title || "",
+        },
+      });
+      if (!response || response.error) {
+        this.setSnapshot({
+          status: "error",
+          observation: response?.error || "LLM request failed.",
+          rawResponse: response?.rawResponse || "",
+          screenshot: response?.screenshot || "",
+          chatMessages: [
+            ...updatedMessages,
+            { role: "assistant", content: response?.error || "LLM request failed." },
+          ],
+        });
+        return;
+      }
+      const assistantMessage = response.rawResponse ||
+        JSON.stringify(response.result || {}, null, 2);
+      this.setSnapshot({
+        status: "idle",
+        thought: response.result?.thought || "",
+        action: response.result?.action || "",
+        observation: response.result?.observation || "",
+        nextAction: response.result?.nextAction || "",
+        rawResponse: response.rawResponse || "",
+        screenshot: response.screenshot || "",
+        chatMessages: [...updatedMessages, { role: "assistant", content: assistantMessage }],
+      });
+    } catch (error) {
+      this.setSnapshot({
+        status: "error",
+        observation: `LLM request failed: ${error?.message || error}`,
+        chatMessages: [
+          ...updatedMessages,
+          { role: "assistant", content: `LLM request failed: ${error?.message || error}` },
+        ],
+      });
+    }
   },
 
   async runAnalysis({ sourceFrameId } = {}) {
