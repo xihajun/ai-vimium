@@ -57,6 +57,10 @@ function renderSnapshot(snapshot) {
   setText("llm-json", JSON.stringify(jsonSnapshot, null, 2));
 }
 
+function setCaptureMode(enabled) {
+  document.body.classList.toggle("llm-capture-mode", Boolean(enabled));
+}
+
 function renderChatMessages(messages) {
   const container = document.getElementById("llm-chat-log");
   if (!container) return;
@@ -91,6 +95,7 @@ function handleMessage({ data }) {
   const handlers = {
     llmSnapshot: ({ snapshot }) => renderSnapshot(snapshot),
     llmSetStatus: ({ status }) => renderSnapshot({ status }),
+    llmCaptureMode: ({ enabled }) => setCaptureMode(enabled),
   };
   const handler = handlers[data.name];
   if (handler) {

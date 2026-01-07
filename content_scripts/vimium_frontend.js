@@ -560,6 +560,7 @@ const LLMFrame = {
   setOverlayHiddenForScreenshot(hidden) {
     if (!this.llmUI?.iframeElement) return;
     this.llmUI.iframeElement.classList.toggle("vimium-llm-frame--hidden-for-capture", hidden);
+    this.llmUI.postMessage({ name: "llmCaptureMode", enabled: hidden });
   },
 
   async withScreenshotHidden(task) {
@@ -681,12 +682,96 @@ const LLMFrame = {
     return sequence.replace(/\s+/g, "");
   },
 
+  normalizeSpecialKey(key) {
+    if (!key || typeof key !== "string") return null;
+    const trimmed = key.trim();
+    if (!trimmed) return null;
+    if (trimmed.startsWith("<") && trimmed.endsWith(">")) return trimmed;
+    const normalized = trimmed.toLowerCase();
+    const specialKeys = new Set([
+      "escape",
+      "esc",
+      "enter",
+      "return",
+      "tab",
+      "space",
+      "backspace",
+      "delete",
+      "del",
+      "up",
+      "down",
+      "left",
+      "right",
+      "pageup",
+      "pagedown",
+      "pgup",
+      "pgdn",
+      "home",
+      "end",
+    ]);
+    if (specialKeys.has(normalized)) {
+      return `<${normalized}>`;
+    }
+    return trimmed;
+  },
+
+  applyTextAction(action) {
+    if (!action || typeof action !== "object") return null;
+    const text = action.text ?? action.value;
+    if (typeof text !== "string" || !text.trim()) return null;
+    let target = null;
+    if (typeof action.selector === "string") {
+      target = document.querySelector(action.selector);
+    }
+    if (!target || !DomUtils.isEditable(target)) {
+      target = document.activeElement;
+    }
+    if (!target || !DomUtils.isEditable(target)) return null;
+    target.focus();
+    if (target.isContentEditable) {
+      target.textContent = text;
+    } else {
+      target.value = text;
+    }
+    target.dispatchEvent(new Event("input", { bubbles: true }));
+    target.dispatchEvent(new Event("change", { bubbles: true }));
+    return "Auto-typed text into the active input.";
+  },
+
+  applyAutoAction(action) {
+    if (!action) return null;
+    if (typeof action === "string") {
+      const appliedSequence = this.dispatchVimiumKeySequence(action);
+      return appliedSequence ? `Auto-executed Vimium keys: ${appliedSequence}` : null;
+    }
+    if (typeof action !== "object") return null;
+    const actionType = (action.type || "").toString().toLowerCase();
+    if (actionType === "type") {
+      return this.applyTextAction(action);
+    }
+    if (["vim_key", "key", "keypress"].includes(actionType)) {
+      const keySequence = this.normalizeSpecialKey(action.key || action.keys || action.sequence);
+      if (!keySequence) return null;
+      const appliedSequence = this.dispatchVimiumKeySequence(keySequence);
+      return appliedSequence ? `Auto-executed Vimium keys: ${appliedSequence}` : null;
+    }
+    const rawKey = this.normalizeSpecialKey(action.key || action.keys || action.sequence);
+    if (rawKey) {
+      const appliedSequence = this.dispatchVimiumKeySequence(rawKey);
+      return appliedSequence ? `Auto-executed Vimium keys: ${appliedSequence}` : null;
+    }
+    return null;
+  },
+
   maybeAutoExecuteAction(result) {
-    const action = result?.nextAction || result?.action;
-    const appliedSequence = this.dispatchVimiumKeySequence(action);
-    if (!appliedSequence) return false;
-    const previousObservation = result?.observation || "";
-    const note = `Auto-executed Vimium keys: ${appliedSequence}`;
+    const notes = [];
+    const actionNote = this.applyAutoAction(result?.action);
+    if (actionNote) notes.push(actionNote);
+    const nextActionNote = this.applyAutoAction(result?.nextAction);
+    if (nextActionNote) notes.push(nextActionNote);
+    if (notes.length === 0) return false;
+    const previousObservation = this.snapshot?.observation || result?.observation || "";
+    const note = notes.join("\n");
     this.setSnapshot({
       observation: previousObservation ? `${previousObservation}\n${note}` : note,
     });

@@ -218,6 +218,10 @@ function buildLLMPrompt({ prompt, pageContext }) {
   if (prompt) {
     lines.push(`User prompt: ${prompt}`);
   }
+  lines.push(
+    "Use Vimium key sequences for actions (e.g. \"f\", \"gg\", \"<enter>\"). " +
+      "Avoid CSS selectors; rely on Vimium link hints to select elements.",
+  );
   lines.push("Respond with a JSON object containing thought, action, observation, nextAction.");
   return lines.join("\n");
 }

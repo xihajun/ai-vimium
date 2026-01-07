@@ -10,6 +10,10 @@ body {
   color: var(--vimium-background-text-color);
 }
 
+body.llm-capture-mode {
+  background: transparent;
+}
+
 #llm-root {
   display: flex;
   flex-direction: column;
@@ -18,6 +22,32 @@ body {
   box-sizing: border-box;
   height: 100vh;
   overflow: hidden;
+}
+
+body.llm-capture-mode #llm-root {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.llm-capture-indicator {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  background: rgba(32, 32, 32, 0.85);
+  color: #ffffff;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+
+body.llm-capture-mode .llm-capture-indicator {
+  display: flex;
 }
 
 .llm-header {
