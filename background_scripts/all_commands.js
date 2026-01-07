@@ -596,6 +596,42 @@ const allCommands = [
   },
 
   //
+  // LLM
+  //
+
+  {
+    name: "enterLLMMode",
+    desc: "Enter LLM mode",
+    group: "llm",
+    noRepeat: true,
+    topFrame: true,
+  },
+
+  {
+    name: "exitLLMMode",
+    desc: "Exit LLM mode",
+    group: "llm",
+    noRepeat: true,
+    topFrame: true,
+  },
+
+  {
+    name: "toggleLLMMode",
+    desc: "Toggle LLM mode",
+    group: "llm",
+    noRepeat: true,
+    topFrame: true,
+  },
+
+  {
+    name: "llmScreenshot",
+    desc: "Capture a screenshot for LLM",
+    group: "llm",
+    noRepeat: true,
+    topFrame: true,
+  },
+
+  //
   // Misc
   //
 
