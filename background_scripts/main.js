@@ -272,11 +272,13 @@ async function runLLMRequest(request, sender) {
   const includeScreenshot = request.includeScreenshot && Settings.get("llmIncludeScreenshot");
 
   let screenshot = "";
+  let captureError = "";
   if (includeScreenshot) {
     try {
       screenshot = await captureVisibleTab(sender);
     } catch (error) {
-      return { error: `Failed to capture screenshot: ${error?.message || error}` };
+      captureError = `Failed to capture screenshot: ${error?.message || error}`;
+      screenshot = "";
     }
   }
 
@@ -326,6 +328,7 @@ async function runLLMRequest(request, sender) {
     result: parsed || {},
     rawResponse: content,
     screenshot,
+    captureError,
   };
 }
 

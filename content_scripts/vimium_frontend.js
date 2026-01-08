@@ -509,6 +509,8 @@ const LLMFrame = {
     prompt: "",
     includeScreenshot: false,
     sourceFrameId: null,
+    repeatCount: 0,
+    lastSignature: "",
   },
   snapshot: {
     status: "idle",
@@ -692,6 +694,65 @@ const LLMFrame = {
     return sequence.replace(/\s+/g, "");
   },
 
+  splitTextAndKeyTokens(sequence) {
+    const parts = [];
+    let buffer = "";
+    for (let i = 0; i < sequence.length; i += 1) {
+      const char = sequence[i];
+      if (char === "<") {
+        const closeIndex = sequence.indexOf(">", i + 1);
+        if (closeIndex !== -1) {
+          if (buffer) {
+            parts.push({ type: "text", value: buffer });
+            buffer = "";
+          }
+          parts.push({ type: "token", value: sequence.slice(i, closeIndex + 1) });
+          i = closeIndex;
+          continue;
+        }
+      }
+      buffer += char;
+    }
+    if (buffer) parts.push({ type: "text", value: buffer });
+    return parts;
+  },
+
+  applyTextSequenceFromString(sequence) {
+    const target = document.activeElement;
+    if (!target || !DomUtils.isEditable(target)) return null;
+    const parts = this.splitTextAndKeyTokens(sequence);
+    let textBuffer = "";
+    let hasEnter = false;
+    parts.forEach((part) => {
+      if (part.type === "text") {
+        textBuffer += part.value;
+        return;
+      }
+      const token = part.value.toLowerCase();
+      if (token === "<space>") {
+        textBuffer += " ";
+      } else if (token === "<enter>" || token === "<return>") {
+        hasEnter = true;
+      }
+    });
+    if (textBuffer.trim().length > 0) {
+      if (target.isContentEditable) {
+        target.textContent = textBuffer;
+      } else {
+        target.value = textBuffer;
+      }
+      target.dispatchEvent(new Event("input", { bubbles: true }));
+      target.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    if (hasEnter) {
+      const enterEvent = this.buildKeyEvent("Enter");
+      enterEvent.target = target;
+      target.dispatchEvent(new KeyboardEvent("keydown", enterEvent));
+      target.dispatchEvent(new KeyboardEvent("keyup", enterEvent));
+    }
+    return "Auto-typed text into the active input.";
+  },
+
   normalizeSpecialKey(key) {
     if (!key || typeof key !== "string") return null;
     const trimmed = key.trim();
@@ -751,6 +812,13 @@ const LLMFrame = {
   applyAutoAction(action) {
     if (!action) return null;
     if (typeof action === "string") {
+      const activeElement = document.activeElement;
+      if (activeElement && DomUtils.isEditable(activeElement)) {
+        const hasText = /[a-z0-9]/i.test(action);
+        if (hasText) {
+          return this.applyTextSequenceFromString(action);
+        }
+      }
       const appliedSequence = this.dispatchVimiumKeySequence(action);
       return appliedSequence ? `Auto-executed Vimium keys: ${appliedSequence}` : null;
     }
@@ -798,10 +866,31 @@ const LLMFrame = {
     return actionText === "done" || nextText === "done";
   },
 
+  updateAutoRunSignature(result) {
+    const signature = JSON.stringify({
+      action: result?.action || "",
+      nextAction: result?.nextAction || "",
+    });
+    if (signature === this.autoRun.lastSignature) {
+      this.autoRun.repeatCount += 1;
+    } else {
+      this.autoRun.repeatCount = 0;
+      this.autoRun.lastSignature = signature;
+    }
+  },
+
+  appendObservationNote(note) {
+    if (!note) return;
+    const previousObservation = this.snapshot?.observation || "";
+    const updated = previousObservation ? `${previousObservation}\n${note}` : note;
+    this.setSnapshot({ observation: updated });
+  },
+
   shouldContinueAutoRun({ result, executed }) {
     if (!this.autoRun.active) return false;
     if (this.autoRun.attempts >= this.autoRun.maxAttempts) return false;
     if (this.isAutoRunDone(result)) return false;
+    if (this.autoRun.repeatCount >= 2) return false;
     return executed || Boolean(result);
   },
 
@@ -816,7 +905,10 @@ const LLMFrame = {
     if (!this.autoRun.active) return;
     if (this.autoRun.attempts >= this.autoRun.maxAttempts) {
       this.autoRun.active = false;
-      this.setStatus("idle");
+      this.setSnapshot({
+        status: "error",
+        observation: "Auto-run stopped after reaching the maximum number of steps.",
+      });
       return;
     }
     this.setSnapshot({ status: "busy" });
@@ -841,6 +933,7 @@ const LLMFrame = {
       ...(this.snapshot.chatMessages || []),
       { role: "assistant", content: assistantMessage },
     ];
+    this.updateAutoRunSignature(response.result);
     this.setSnapshot({
       status: "busy",
       thought: response.result?.thought || "",
@@ -851,11 +944,21 @@ const LLMFrame = {
       screenshot: response.screenshot || "",
       chatMessages: updatedMessages,
     });
+    if (response.captureError) {
+      this.appendObservationNote(response.captureError);
+    }
     const executed = this.maybeAutoExecuteAction(response.result);
     if (this.shouldContinueAutoRun({ result: response.result, executed })) {
       this.scheduleAutoRun();
     } else {
       this.autoRun.active = false;
+      if (this.autoRun.repeatCount >= 2) {
+        this.setSnapshot({
+          status: "error",
+          observation: "Auto-run stopped because the same steps repeated multiple times.",
+        });
+        return;
+      }
       this.setStatus("idle");
     }
   },
@@ -924,6 +1027,8 @@ const LLMFrame = {
       prompt: trimmedMessage,
       includeScreenshot,
       sourceFrameId,
+      repeatCount: 0,
+      lastSignature: "",
     };
     this.setSnapshot({
       status: "busy",
@@ -949,6 +1054,7 @@ const LLMFrame = {
       }
       const assistantMessage = response.rawResponse ||
         JSON.stringify(response.result || {}, null, 2);
+      this.updateAutoRunSignature(response.result);
       this.setSnapshot({
         status: "busy",
         thought: response.result?.thought || "",
@@ -959,11 +1065,21 @@ const LLMFrame = {
         screenshot: response.screenshot || "",
         chatMessages: [...updatedMessages, { role: "assistant", content: assistantMessage }],
       });
+      if (response.captureError) {
+        this.appendObservationNote(response.captureError);
+      }
       const executed = this.maybeAutoExecuteAction(response.result);
       if (this.shouldContinueAutoRun({ result: response.result, executed })) {
         this.scheduleAutoRun();
       } else {
         this.autoRun.active = false;
+        if (this.autoRun.repeatCount >= 2) {
+          this.setSnapshot({
+            status: "error",
+            observation: "Auto-run stopped because the same steps repeated multiple times.",
+          });
+          return;
+        }
         this.setStatus("idle");
       }
     } catch (error) {
@@ -1013,6 +1129,8 @@ const LLMFrame = {
       prompt,
       includeScreenshot,
       sourceFrameId,
+      repeatCount: 0,
+      lastSignature: "",
     };
     this.setSnapshot({
       status: "busy",
@@ -1037,6 +1155,7 @@ const LLMFrame = {
         });
         return;
       }
+      this.updateAutoRunSignature(response.result);
       this.setSnapshot({
         status: "busy",
         thought: response.result?.thought || "",
@@ -1046,11 +1165,21 @@ const LLMFrame = {
         rawResponse: response.rawResponse || "",
         screenshot: response.screenshot || "",
       });
+      if (response.captureError) {
+        this.appendObservationNote(response.captureError);
+      }
       const executed = this.maybeAutoExecuteAction(response.result);
       if (this.shouldContinueAutoRun({ result: response.result, executed })) {
         this.scheduleAutoRun();
       } else {
         this.autoRun.active = false;
+        if (this.autoRun.repeatCount >= 2) {
+          this.setSnapshot({
+            status: "error",
+            observation: "Auto-run stopped because the same steps repeated multiple times.",
+          });
+          return;
+        }
         this.setStatus("idle");
       }
     } catch (error) {
