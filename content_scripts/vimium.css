@@ -236,8 +236,9 @@ iframe.vimium-llm-frame {
 }
 
 iframe.vimium-llm-frame.vimium-llm-frame--hidden-for-capture {
-  opacity: 0;
+  opacity: 1;
   pointer-events: none;
+  box-shadow: none;
 }
 
 div.vimium-flash {

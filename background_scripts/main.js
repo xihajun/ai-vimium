@@ -218,6 +218,10 @@ function buildLLMPrompt({ prompt, pageContext }) {
   if (prompt) {
     lines.push(`User prompt: ${prompt}`);
   }
+  lines.push(
+    "Use Vimium key sequences for actions (e.g. \"f\", \"gg\", \"<enter>\"). " +
+      "Avoid CSS selectors; rely on Vimium link hints to select elements.",
+  );
   lines.push("Respond with a JSON object containing thought, action, observation, nextAction.");
   return lines.join("\n");
 }
@@ -268,11 +272,13 @@ async function runLLMRequest(request, sender) {
   const includeScreenshot = request.includeScreenshot && Settings.get("llmIncludeScreenshot");
 
   let screenshot = "";
+  let captureError = "";
   if (includeScreenshot) {
     try {
       screenshot = await captureVisibleTab(sender);
     } catch (error) {
-      return { error: `Failed to capture screenshot: ${error?.message || error}` };
+      captureError = `Failed to capture screenshot: ${error?.message || error}`;
+      screenshot = "";
     }
   }
 
@@ -322,6 +328,7 @@ async function runLLMRequest(request, sender) {
     result: parsed || {},
     rawResponse: content,
     screenshot,
+    captureError,
   };
 }
 
