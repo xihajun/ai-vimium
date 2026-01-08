@@ -745,12 +745,11 @@ const LLMFrame = {
       target.dispatchEvent(new Event("change", { bubbles: true }));
     }
     if (hasEnter) {
-      const enterEvent = this.buildKeyEvent("Enter");
-      enterEvent.target = target;
-      target.dispatchEvent(new KeyboardEvent("keydown", enterEvent));
-      target.dispatchEvent(new KeyboardEvent("keyup", enterEvent));
+      this.dispatchVimiumKeySequence("<enter>");
     }
-    return "Auto-typed text into the active input.";
+    return hasEnter
+      ? "Auto-typed text into the active input and pressed Enter."
+      : "Auto-typed text into the active input.";
   },
 
   normalizeSpecialKey(key) {
