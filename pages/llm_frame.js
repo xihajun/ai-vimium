@@ -39,6 +39,8 @@ function renderSnapshot(snapshot) {
   setText("llm-action", normalized.action);
   setText("llm-observation", normalized.observation);
   setText("llm-next-action", normalized.nextAction);
+  setText("llm-capture-action", normalized.action || "-");
+  setText("llm-capture-next", normalized.nextAction || "-");
   renderChatMessages(normalized.chatMessages);
   const screenshot = document.getElementById("llm-screenshot");
   if (screenshot) {
@@ -55,6 +57,10 @@ function renderSnapshot(snapshot) {
     screenshot: normalized.screenshot ? "[screenshot data]" : "",
   };
   setText("llm-json", JSON.stringify(jsonSnapshot, null, 2));
+}
+
+function setCaptureMode(enabled) {
+  document.body.classList.toggle("llm-capture-mode", Boolean(enabled));
 }
 
 function renderChatMessages(messages) {
@@ -91,6 +97,7 @@ function handleMessage({ data }) {
   const handlers = {
     llmSnapshot: ({ snapshot }) => renderSnapshot(snapshot),
     llmSetStatus: ({ status }) => renderSnapshot({ status }),
+    llmCaptureMode: ({ enabled }) => setCaptureMode(enabled),
   };
   const handler = handlers[data.name];
   if (handler) {

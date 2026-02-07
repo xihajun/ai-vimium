@@ -502,6 +502,16 @@ const HelpDialog = {
 const LLMFrame = {
   llmUI: null,
   mode: null,
+  autoRun: {
+    active: false,
+    attempts: 0,
+    maxAttempts: 20,
+    prompt: "",
+    includeScreenshot: false,
+    sourceFrameId: null,
+    repeatCount: 0,
+    lastSignature: "",
+  },
   snapshot: {
     status: "idle",
     thought: "",
@@ -560,6 +570,7 @@ const LLMFrame = {
   setOverlayHiddenForScreenshot(hidden) {
     if (!this.llmUI?.iframeElement) return;
     this.llmUI.iframeElement.classList.toggle("vimium-llm-frame--hidden-for-capture", hidden);
+    this.llmUI.postMessage({ name: "llmCaptureMode", enabled: hidden });
   },
 
   async withScreenshotHidden(task) {
@@ -608,6 +619,8 @@ const LLMFrame = {
       metaKey: Boolean(modifiers.metaKey),
       shiftKey: Boolean(modifiers.shiftKey),
       isTrusted: true,
+      preventDefault() {},
+      stopImmediatePropagation() {},
     };
   },
 
@@ -681,16 +694,288 @@ const LLMFrame = {
     return sequence.replace(/\s+/g, "");
   },
 
+  splitTextAndKeyTokens(sequence) {
+    const parts = [];
+    let buffer = "";
+    for (let i = 0; i < sequence.length; i += 1) {
+      const char = sequence[i];
+      if (char === "<") {
+        const closeIndex = sequence.indexOf(">", i + 1);
+        if (closeIndex !== -1) {
+          if (buffer) {
+            parts.push({ type: "text", value: buffer });
+            buffer = "";
+          }
+          parts.push({ type: "token", value: sequence.slice(i, closeIndex + 1) });
+          i = closeIndex;
+          continue;
+        }
+      }
+      buffer += char;
+    }
+    if (buffer) parts.push({ type: "text", value: buffer });
+    return parts;
+  },
+
+  applyTextSequenceFromString(sequence) {
+    const target = document.activeElement;
+    if (!target || !DomUtils.isEditable(target)) return null;
+    const parts = this.splitTextAndKeyTokens(sequence);
+    let textBuffer = "";
+    let hasEnter = false;
+    parts.forEach((part) => {
+      if (part.type === "text") {
+        textBuffer += part.value;
+        return;
+      }
+      const token = part.value.toLowerCase();
+      if (token === "<space>") {
+        textBuffer += " ";
+      } else if (token === "<enter>" || token === "<return>") {
+        hasEnter = true;
+      }
+    });
+    if (textBuffer.trim().length > 0) {
+      if (target.isContentEditable) {
+        target.textContent = textBuffer;
+      } else {
+        target.value = textBuffer;
+      }
+      target.dispatchEvent(new Event("input", { bubbles: true }));
+      target.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    if (hasEnter) {
+      this.dispatchVimiumKeySequence("<enter>");
+    }
+    return hasEnter
+      ? "Auto-typed text into the active input and pressed Enter."
+      : "Auto-typed text into the active input.";
+  },
+
+  normalizeSpecialKey(key) {
+    if (!key || typeof key !== "string") return null;
+    const trimmed = key.trim();
+    if (!trimmed) return null;
+    if (trimmed.startsWith("<") && trimmed.endsWith(">")) return trimmed;
+    const normalized = trimmed.toLowerCase();
+    const specialKeys = new Set([
+      "escape",
+      "esc",
+      "enter",
+      "return",
+      "tab",
+      "space",
+      "backspace",
+      "delete",
+      "del",
+      "up",
+      "down",
+      "left",
+      "right",
+      "pageup",
+      "pagedown",
+      "pgup",
+      "pgdn",
+      "home",
+      "end",
+    ]);
+    if (specialKeys.has(normalized)) {
+      return `<${normalized}>`;
+    }
+    return trimmed;
+  },
+
+  applyTextAction(action) {
+    if (!action || typeof action !== "object") return null;
+    const text = action.text ?? action.value;
+    if (typeof text !== "string" || !text.trim()) return null;
+    let target = null;
+    if (typeof action.selector === "string") {
+      target = document.querySelector(action.selector);
+    }
+    if (!target || !DomUtils.isEditable(target)) {
+      target = document.activeElement;
+    }
+    if (!target || !DomUtils.isEditable(target)) return null;
+    target.focus();
+    if (target.isContentEditable) {
+      target.textContent = text;
+    } else {
+      target.value = text;
+    }
+    target.dispatchEvent(new Event("input", { bubbles: true }));
+    target.dispatchEvent(new Event("change", { bubbles: true }));
+    return "Auto-typed text into the active input.";
+  },
+
+  applyAutoAction(action) {
+    if (!action) return null;
+    if (typeof action === "string") {
+      const activeElement = document.activeElement;
+      if (activeElement && DomUtils.isEditable(activeElement)) {
+        const hasText = /[a-z0-9]/i.test(action);
+        if (hasText) {
+          return this.applyTextSequenceFromString(action);
+        }
+      }
+      const appliedSequence = this.dispatchVimiumKeySequence(action);
+      return appliedSequence ? `Auto-executed Vimium keys: ${appliedSequence}` : null;
+    }
+    if (typeof action !== "object") return null;
+    const actionType = (action.type || "").toString().toLowerCase();
+    if (actionType === "type") {
+      return this.applyTextAction(action);
+    }
+    if (["vim_key", "key", "keypress"].includes(actionType)) {
+      const keySequence = this.normalizeSpecialKey(action.key || action.keys || action.sequence);
+      if (!keySequence) return null;
+      const appliedSequence = this.dispatchVimiumKeySequence(keySequence);
+      return appliedSequence ? `Auto-executed Vimium keys: ${appliedSequence}` : null;
+    }
+    const rawKey = this.normalizeSpecialKey(action.key || action.keys || action.sequence);
+    if (rawKey) {
+      const appliedSequence = this.dispatchVimiumKeySequence(rawKey);
+      return appliedSequence ? `Auto-executed Vimium keys: ${appliedSequence}` : null;
+    }
+    return null;
+  },
+
   maybeAutoExecuteAction(result) {
-    const action = result?.nextAction || result?.action;
-    const appliedSequence = this.dispatchVimiumKeySequence(action);
-    if (!appliedSequence) return false;
-    const previousObservation = result?.observation || "";
-    const note = `Auto-executed Vimium keys: ${appliedSequence}`;
+    const notes = [];
+    const actionNote = this.applyAutoAction(result?.action);
+    if (actionNote) notes.push(actionNote);
+    const nextActionNote = this.applyAutoAction(result?.nextAction);
+    if (nextActionNote) notes.push(nextActionNote);
+    if (notes.length === 0) return false;
+    const previousObservation = this.snapshot?.observation || result?.observation || "";
+    const note = notes.join("\n");
     this.setSnapshot({
       observation: previousObservation ? `${previousObservation}\n${note}` : note,
     });
     return true;
+  },
+
+  isAutoRunDone(result) {
+    const actionType = result?.action?.type || result?.nextAction?.type || "";
+    if (actionType.toString().toLowerCase() === "done") return true;
+    const actionText = typeof result?.action === "string" ? result.action.trim().toLowerCase() : "";
+    const nextText = typeof result?.nextAction === "string"
+      ? result.nextAction.trim().toLowerCase()
+      : "";
+    return actionText === "done" || nextText === "done";
+  },
+
+  updateAutoRunSignature(result) {
+    const signature = JSON.stringify({
+      action: result?.action || "",
+      nextAction: result?.nextAction || "",
+    });
+    if (signature === this.autoRun.lastSignature) {
+      this.autoRun.repeatCount += 1;
+    } else {
+      this.autoRun.repeatCount = 0;
+      this.autoRun.lastSignature = signature;
+    }
+  },
+
+  appendObservationNote(note) {
+    if (!note) return;
+    const previousObservation = this.snapshot?.observation || "";
+    const updated = previousObservation ? `${previousObservation}\n${note}` : note;
+    this.setSnapshot({ observation: updated });
+  },
+
+  shouldContinueAutoRun({ result, executed }) {
+    if (!this.autoRun.active) return false;
+    if (this.autoRun.attempts >= this.autoRun.maxAttempts) return false;
+    if (this.isAutoRunDone(result)) return false;
+    if (this.autoRun.repeatCount >= 2) return false;
+    return executed || Boolean(result);
+  },
+
+  scheduleAutoRun() {
+    window.setTimeout(() => {
+      if (!this.autoRun.active) return;
+      this.runAutoStep();
+    }, 800);
+  },
+
+  async runAutoStep() {
+    if (!this.autoRun.active) return;
+    if (this.autoRun.attempts >= this.autoRun.maxAttempts) {
+      this.autoRun.active = false;
+      this.setSnapshot({
+        status: "error",
+        observation: "Auto-run stopped after reaching the maximum number of steps.",
+      });
+      return;
+    }
+    this.setSnapshot({ status: "busy" });
+    this.autoRun.attempts += 1;
+    const response = await this.requestLLM({
+      prompt: this.autoRun.prompt,
+      includeScreenshot: this.autoRun.includeScreenshot,
+    });
+    if (!response || response.error) {
+      this.autoRun.active = false;
+      this.setSnapshot({
+        status: "error",
+        observation: response?.error || "LLM request failed.",
+        rawResponse: response?.rawResponse || "",
+        screenshot: response?.screenshot || "",
+      });
+      return;
+    }
+    const assistantMessage = response.rawResponse ||
+      JSON.stringify(response.result || {}, null, 2);
+    const updatedMessages = [
+      ...(this.snapshot.chatMessages || []),
+      { role: "assistant", content: assistantMessage },
+    ];
+    this.updateAutoRunSignature(response.result);
+    this.setSnapshot({
+      status: "busy",
+      thought: response.result?.thought || "",
+      action: response.result?.action || "",
+      observation: response.result?.observation || "",
+      nextAction: response.result?.nextAction || "",
+      rawResponse: response.rawResponse || "",
+      screenshot: response.screenshot || "",
+      chatMessages: updatedMessages,
+    });
+    if (response.captureError) {
+      this.appendObservationNote(response.captureError);
+    }
+    const executed = this.maybeAutoExecuteAction(response.result);
+    if (this.shouldContinueAutoRun({ result: response.result, executed })) {
+      this.scheduleAutoRun();
+    } else {
+      this.autoRun.active = false;
+      if (this.autoRun.repeatCount >= 2) {
+        this.setSnapshot({
+          status: "error",
+          observation: "Auto-run stopped because the same steps repeated multiple times.",
+        });
+        return;
+      }
+      this.setStatus("idle");
+    }
+  },
+
+  async requestLLM({ prompt, includeScreenshot }) {
+    const request = () =>
+      chrome.runtime.sendMessage({
+        handler: "runLLMRequest",
+        prompt,
+        includeScreenshot,
+        pageContext: {
+          url: globalThis.location.href,
+          title: globalThis.document?.title || "",
+        },
+      });
+    return includeScreenshot
+      ? await this.withScreenshotHidden(request)
+      : await request();
   },
 
   async runChat({ message, sourceFrameId } = {}) {
@@ -734,26 +1019,26 @@ const LLMFrame = {
     this.init();
     this.show({ sourceFrameId });
     const updatedMessages = [...existingMessages, { role: "user", content: trimmedMessage }];
+    this.autoRun = {
+      active: true,
+      attempts: 0,
+      maxAttempts: Settings.get("llmAutoRunMaxSteps") || 20,
+      prompt: trimmedMessage,
+      includeScreenshot,
+      sourceFrameId,
+      repeatCount: 0,
+      lastSignature: "",
+    };
     this.setSnapshot({
       status: "busy",
       chatMessages: updatedMessages,
     });
 
     try {
-      const request = () =>
-        chrome.runtime.sendMessage({
-          handler: "runLLMRequest",
-          prompt: trimmedMessage,
-          includeScreenshot,
-          pageContext: {
-            url: globalThis.location.href,
-            title: globalThis.document?.title || "",
-          },
-        });
-      const response = includeScreenshot
-        ? await this.withScreenshotHidden(request)
-        : await request();
+      this.autoRun.attempts += 1;
+      const response = await this.requestLLM({ prompt: trimmedMessage, includeScreenshot });
       if (!response || response.error) {
+        this.autoRun.active = false;
         this.setSnapshot({
           status: "error",
           observation: response?.error || "LLM request failed.",
@@ -768,8 +1053,9 @@ const LLMFrame = {
       }
       const assistantMessage = response.rawResponse ||
         JSON.stringify(response.result || {}, null, 2);
+      this.updateAutoRunSignature(response.result);
       this.setSnapshot({
-        status: "idle",
+        status: "busy",
         thought: response.result?.thought || "",
         action: response.result?.action || "",
         observation: response.result?.observation || "",
@@ -778,8 +1064,25 @@ const LLMFrame = {
         screenshot: response.screenshot || "",
         chatMessages: [...updatedMessages, { role: "assistant", content: assistantMessage }],
       });
-      this.maybeAutoExecuteAction(response.result);
+      if (response.captureError) {
+        this.appendObservationNote(response.captureError);
+      }
+      const executed = this.maybeAutoExecuteAction(response.result);
+      if (this.shouldContinueAutoRun({ result: response.result, executed })) {
+        this.scheduleAutoRun();
+      } else {
+        this.autoRun.active = false;
+        if (this.autoRun.repeatCount >= 2) {
+          this.setSnapshot({
+            status: "error",
+            observation: "Auto-run stopped because the same steps repeated multiple times.",
+          });
+          return;
+        }
+        this.setStatus("idle");
+      }
     } catch (error) {
+      this.autoRun.active = false;
       this.setSnapshot({
         status: "error",
         observation: `LLM request failed: ${error?.message || error}`,
@@ -818,6 +1121,16 @@ const LLMFrame = {
     const includeScreenshot = Settings.get("llmIncludeScreenshot");
     this.init();
     this.show({ sourceFrameId });
+    this.autoRun = {
+      active: true,
+      attempts: 0,
+      maxAttempts: Settings.get("llmAutoRunMaxSteps") || 20,
+      prompt,
+      includeScreenshot,
+      sourceFrameId,
+      repeatCount: 0,
+      lastSignature: "",
+    };
     this.setSnapshot({
       status: "busy",
       thought: "",
@@ -829,20 +1142,10 @@ const LLMFrame = {
     });
 
     try {
-      const request = () =>
-        chrome.runtime.sendMessage({
-          handler: "runLLMRequest",
-          prompt,
-          includeScreenshot,
-          pageContext: {
-            url: globalThis.location.href,
-            title: globalThis.document?.title || "",
-          },
-        });
-      const response = includeScreenshot
-        ? await this.withScreenshotHidden(request)
-        : await request();
+      this.autoRun.attempts += 1;
+      const response = await this.requestLLM({ prompt, includeScreenshot });
       if (!response || response.error) {
+        this.autoRun.active = false;
         this.setSnapshot({
           status: "error",
           observation: response?.error || "LLM request failed.",
@@ -851,8 +1154,9 @@ const LLMFrame = {
         });
         return;
       }
+      this.updateAutoRunSignature(response.result);
       this.setSnapshot({
-        status: "idle",
+        status: "busy",
         thought: response.result?.thought || "",
         action: response.result?.action || "",
         observation: response.result?.observation || "",
@@ -860,8 +1164,25 @@ const LLMFrame = {
         rawResponse: response.rawResponse || "",
         screenshot: response.screenshot || "",
       });
-      this.maybeAutoExecuteAction(response.result);
+      if (response.captureError) {
+        this.appendObservationNote(response.captureError);
+      }
+      const executed = this.maybeAutoExecuteAction(response.result);
+      if (this.shouldContinueAutoRun({ result: response.result, executed })) {
+        this.scheduleAutoRun();
+      } else {
+        this.autoRun.active = false;
+        if (this.autoRun.repeatCount >= 2) {
+          this.setSnapshot({
+            status: "error",
+            observation: "Auto-run stopped because the same steps repeated multiple times.",
+          });
+          return;
+        }
+        this.setStatus("idle");
+      }
     } catch (error) {
+      this.autoRun.active = false;
       this.setSnapshot({
         status: "error",
         observation: `LLM request failed: ${error?.message || error}`,
